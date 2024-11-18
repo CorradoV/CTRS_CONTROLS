@@ -63,8 +63,8 @@ class CTCRModel
 		// Outputs:
 		// boolean return value		Return false, if the joints limits and inequality constraints are invalidated for the requested values in q.
 		//							Return true otherwise (and proceed to calculate and return J).
-		bool pos_jacobian(Eigen::MatrixXd &J, Eigen::MatrixXd q);
-		
+		bool jacobian(Eigen::MatrixXd &J, Eigen::MatrixXd q);
+		bool get_body_jacobian(Eigen::MatrixXd &J, Eigen::MatrixXd q);
 		Eigen::MatrixXd get_current_config();
 		Eigen::Matrix4d get_ee_frame();
 		Eigen::MatrixXd get_backbone_centerline();
@@ -93,8 +93,10 @@ Eigen::MatrixXd arc_to_x(Eigen::Matrix4d init_frame, std::vector<double> kappa, 
 //
 // Eigen::Matrix4d		4x4 Matrix, being the product of [S]*theta, where [S] is the screw axis in matrix form consisting of an angular (skew symmetric) and translational part
 //						and theta is the displacement along this screw axis
+Eigen::Vector3d Rot2Euler(Eigen::Matrix3d R);
+Eigen::Matrix3d  EulTrans(Eigen::Vector3d eul);
 Eigen::Matrix4d matrix_log(Eigen::Matrix4d T);
-
+Eigen::MatrixXd calculate_desired_body_twist(Eigen::Matrix4d T_target, Eigen::Matrix4d T_cur);
 
 // This function should calculate and return a desired twist in the body frame based on a current body frame and a desired body frame (both frames expressed w.r.t. the space frame)
 // Inputs:

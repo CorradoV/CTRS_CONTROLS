@@ -187,14 +187,18 @@ bool CTCRModel::forward_kinematics(Eigen::Matrix4d &ee_frame, Eigen::MatrixXd &b
 // Outputs:
 // boolean return value		Return false, if the joints limits and inequality constraints are invalidated for the requested values in q.
 //							Return true otherwise (and proceed to calculate and return J).
-bool CTCRModel::pos_jacobian(Eigen::MatrixXd &J, Eigen::MatrixXd q)
+bool CTCRModel::jacobian(Eigen::MatrixXd &J, Eigen::MatrixXd q)
 {
 	//Resize J and set to zero
     
-	J.setZero(3,6);
+	J.setZero(6,6);
 	
 	//Evaluate at current configuration q
 	Eigen::Matrix4d init_ee_frame;
+    Eigen::Matrix3d R;
+    Eigen::Matrix3d R_c;
+    Eigen::Vector3d eul;
+    Eigen::Vector3d eul_c;
 	Eigen::MatrixXd init_backbone_centerline;
 	std::vector<int> tube_ind;
 	Eigen::MatrixXd init_q = q;
@@ -215,8 +219,57 @@ bool CTCRModel::pos_jacobian(Eigen::MatrixXd &J, Eigen::MatrixXd q)
         Eigen::MatrixXd init_backbone_centerline_c;
         std::vector<int> tube_ind_c;
         forward_kinematics(init_ee_frame_c, init_backbone_centerline_c, tube_ind_c, q_ic);
+        R = init_ee_frame.block<3, 3>(0, 0);
+        R_c = init_ee_frame_c.block<3, 3>(0, 0);
+        eul = Rot2Euler(R);
+        eul_c = Rot2Euler(R_c);
+
         Eigen::Matrix<double, 3, 1> delta_X_h = (init_ee_frame_c.block<3, 1>(0, 3)-init_ee_frame.block<3, 1>(0, 3))/1e-4;
+        Eigen::Matrix<double, 3, 1> delta_X_h_rot = (eul_c-eul)/1e-4;
         J.block<3, 1>(0, i) << delta_X_h;
+        J.block<3, 1>(3, i) << delta_X_h_rot;
+
+    }
+
+
+	//YOUR CODE ENDS HERE
+
+	
+	//Setting the member variables accordingly if q was valid
+	m_ee_frame = init_ee_frame;
+	m_backbone_centerline = init_backbone_centerline;
+	m_current_config = init_q;
+	
+	return true;
+}
+
+bool CTCRModel::get_body_jacobian(Eigen::MatrixXd &J, Eigen::MatrixXd q)
+{
+	//Resize J and set to zero
+	J.setZero(6,6);
+	
+	//Evaluate at current configuration q
+	Eigen::Matrix4d init_ee_frame;
+	Eigen::MatrixXd init_backbone_centerline;
+	std::vector<int> tube_ind;
+	Eigen::MatrixXd init_q = q;
+	
+	if(!forward_kinematics(init_ee_frame, init_backbone_centerline, tube_ind, q))
+	{
+		//Return false if joint value constraints are not met
+		return false;
+	}
+	//Calculate the Body Jacobian using Finite Differences here (YOUR CODE GOES HERE)
+	for(int i = 0; i < 6; ++i)
+    {
+        Eigen::MatrixXd q_ic = q;
+        q_ic(i, 0) += 1e-4;
+        Eigen::Matrix4d init_ee_frame_c;
+        Eigen::MatrixXd init_backbone_centerline_c;
+        std::vector<int> tube_ind_c;
+        forward_kinematics(init_ee_frame_c, init_backbone_centerline_c, tube_ind_c, q_ic);
+        Eigen::Matrix<double, 6, 1> delta_X_h = calculate_desired_body_twist(init_ee_frame_c, init_ee_frame) / 1e-4;
+        J.block<6, 1>(0, i) << delta_X_h;
 
     }
 
@@ -390,6 +443,31 @@ Eigen::Matrix3d  VecToSkewSymmetric(Eigen::Vector3d v)
     return v_skew;
 }
 
+Eigen::Vector3d Rot2Euler(Eigen::Matrix3d R){
+    
+    Eigen::Vector3d RPY;
+
+    double app = sqrt(pow(R(2,1),2) + pow(R(2,2),2));
+
+    RPY[0] = atan2(R(1,0), R(0,0)); //phi 
+    RPY[1] = atan2(-R(2,0), app);    //theta 
+    RPY[2] = atan2(R(2,1), R(2,2)); //psi 
+
+    return RPY;
+
+
+}
+
+Eigen::Matrix3d  EulTrans(Eigen::Vector3d eul)
+{
+
+    Eigen::Matrix3d T;
+    T <<  1,        0.0, sin(eul(1)),
+               0.0,  cos(eul(0)),        -sin(eul(0))*cos(eul(1)),
+               0.0, sin(eul(0)), cos(eul(0))*cos(eul(1));
+    return T;
+}
+
 // This function should implement mapping from SE(3) (Sepcial Euclidean Lie Group) to the corresponding lie algebra se(3)
 // Inputs:
 // T					4x4 Matrix, specifying a transformation matrix T = [R p; 0 0 0 1] in SE(3)
@@ -427,6 +505,22 @@ Eigen::Matrix4d matrix_log(Eigen::Matrix4d T)
 
 	return matrix_log;
 
+}
+
+
+Eigen::MatrixXd calculate_desired_body_twist(Eigen::Matrix4d T_target, Eigen::Matrix4d T_cur)
+{
+	
+	Eigen::Matrix<double,6,1> body_twist;
+	body_twist.setZero();
+    Eigen::Matrix4d T_cur_inv = InvTransformation(T_cur);
+    Eigen::Matrix4d log_Tbssd = matrix_log(T_cur_inv * T_target);
+    Eigen::Matrix<double, 3, 1> omega = SkewSymmetricToVec(log_Tbssd.block(0, 0, 3, 3));
+    Eigen::Matrix<double, 3, 1> v = log_Tbssd.block(0, 3, 3, 1);
+    body_twist.block(0, 0, 3, 1) = omega;
+    body_twist.block(3, 0, 3, 1) = v;
+;
+	return body_twist;
 }
 
 
